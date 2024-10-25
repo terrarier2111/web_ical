@@ -73,6 +73,8 @@ pub struct Event {
     pub last_modified: Option<DateTime<Utc>>,
     pub location: Option<String>,
     pub organizer: Option<String>,
+    pub url: Option<String>,
+    pub name: Option<String>,
     pub sequence: Option<u32>,
     pub status: Option<String>,
     pub summary: Option<String>,
@@ -102,6 +104,8 @@ impl Event {
             status: None,
             summary: None,
             transp: None,
+            url: None,
+            name: None,
         }
     }
 }
@@ -140,6 +144,7 @@ impl Calendar {
 
     ///Create a `Calendar` from text in memory.
     pub fn new_from_data(data: &str) -> anyhow::Result<Calendar> {
+        println!("raw: {data}");
         let text_data = data.lines().collect::<Vec<_>>();
         let mut struct_even: Vec<Event> = Vec::new();
 
@@ -168,6 +173,9 @@ impl Calendar {
             log::trace!("processing {}:{}", &key_cal, &value_cal);
 
             match key_cal {
+                "NAME" => {
+                    even_temp.name = Some(value_cal);
+                }
                 "PRODID" => {
                     prodid = value_cal;
                 }
