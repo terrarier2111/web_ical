@@ -214,8 +214,8 @@ impl Calendar {
                     Ok(val) => {
                         even_temp.dtstart = Some(val);
                     }
-                    Err(_) => {
-                        println!("bad dt start");
+                    Err(err) => {
+                        println!("bad dt start: {err}");
                     },
                 },
                 "DTSTART;VALUE=DATE" => {
