@@ -214,9 +214,7 @@ impl Calendar {
                     Ok(val) => {
                         even_temp.dtstart = Some(val);
                     }
-                    Err(err) => {
-                        println!("bad dt start: {err}");
-                    },
+                    Err(_) => (),
                 },
                 "DTSTART;VALUE=DATE" => {
                     let aux_date = value_cal + "T000000Z";
@@ -224,11 +222,15 @@ impl Calendar {
                         Ok(val) => {
                             even_temp.dtstart = Some(val);
                         }
-                        Err(_) => {
-                            println!("bad dt start 2");
-                        },
+                        Err(_) => (),
                     }
                 }
+                "DTEND" => match convert_datetime(&value_cal, "%Y%m%dT%H%M%S") {
+                    Ok(val) => {
+                        even_temp.dtend = Some(val);
+                    }
+                    Err(_) => (),
+                },
                 "DTEND;VALUE=DATE" => {
                     let time_cal = "T002611Z";
                     let aux_date = value_cal + time_cal;
