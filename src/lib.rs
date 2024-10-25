@@ -73,8 +73,6 @@ pub struct Event {
     pub last_modified: Option<DateTime<Utc>>,
     pub location: Option<String>,
     pub organizer: Option<String>,
-    pub url: Option<String>,
-    pub name: Option<String>,
     pub sequence: Option<u32>,
     pub status: Option<String>,
     pub summary: Option<String>,
@@ -104,8 +102,6 @@ impl Event {
             status: None,
             summary: None,
             transp: None,
-            url: None,
-            name: None,
         }
     }
 }
@@ -168,14 +164,12 @@ impl Calendar {
             };
 
             let key_cal = kv[0];
+            let key_cal = key_cal.split_once(';').map(|(val, _)| val).unwrap_or(key_cal);
             let value_cal = kv[1].to_string();
 
             log::trace!("processing {}:{}", &key_cal, &value_cal);
 
             match key_cal {
-                "NAME" => {
-                    even_temp.name = Some(value_cal);
-                }
                 "PRODID" => {
                     prodid = value_cal;
                 }
