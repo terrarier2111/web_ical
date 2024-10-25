@@ -128,13 +128,13 @@ macro_rules! assign_if_ok {
 
 impl Calendar {
     ///Request HTTP or HTTPS to iCalendar url.
-    pub fn new(url: &str) -> anyhow::Result<Calendar> {
-        let data = pollster::block_on(
-            pollster::block_on(reqwest::get(url))
-                .context("Could not make request")?
-                .text(),
-        )
-        .context("Could not read response")?;
+    pub async fn new(url: &str) -> anyhow::Result<Calendar> {
+        let data = reqwest::get(url)
+            .await
+            .context("Could not make request")?
+            .text()
+            .await
+            .context("Could not read response")?;
         Self::new_from_data(&data)
     }
 
