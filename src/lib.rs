@@ -77,6 +77,13 @@ pub struct Event {
     pub status: Option<String>,
     pub summary: Option<String>,
     pub transp: Option<String>,
+    pub repeat: Option<Repeat>,
+}
+
+#[derive(Clone)]
+pub struct Repeat {
+    pub freq: String,
+    pub until: Option<DateTime<Utc>>,
 }
 
 impl Event {
@@ -102,6 +109,7 @@ impl Event {
             status: None,
             summary: None,
             transp: None,
+            repeat: None,
         }
     }
 }
@@ -209,7 +217,35 @@ impl Calendar {
                 "TRANSP" => {
                     even_temp.transp = Some(value_cal);
                 }
-                "ORGANIZER" => {}
+                "ORGANIZER" => {
+                    even_temp.organizer = Some(value_cal);
+                }
+                "RRULE" => {
+                    let mut vals = value_cal.split(';');
+                    let freq = {
+                        let freq = vals.next().unwrap();
+                        if freq.starts_with("FREQ=") {
+                            &freq["FREQ=".len()..]
+                        } else {
+                            println!("Found weird rrule: {}", value_cal);
+                            continue;
+                        }
+                    };
+                    let until = vals.next().map(|until| {
+                        if until.starts_with("UNTIL=") {
+                            match convert_datetime(&freq["UNTIL=".len()..], "%Y%m%dT%H%M%S") {
+                                Ok(val) => {
+                                    Some(val)
+                                }
+                                Err(_) => None,
+                            }
+                        } else {
+                            println!("Found weird rrule: {}", value_cal);
+                            None
+                        }
+                    }).flatten();
+                    even_temp.repeat = Some(Repeat { freq: freq.to_string(), until });
+                }
                 "DTSTART" => match convert_datetime(&value_cal, "%Y%m%dT%H%M%S") {
                     Ok(val) => {
                         even_temp.dtstart = Some(val);
