@@ -64,40 +64,41 @@ fn convert_datetime(value: &str, format: &str) -> anyhow::Result<DateTime<Utc>> 
 #[derive(Clone)]
 // You should have called it Event, as it is only one event
 pub struct Event {
-    pub dtstart: DateTime<Utc>,
-    pub dtend: DateTime<Utc>,
-    pub dtstamp: DateTime<Utc>,
-    pub uid: String,
-    pub created: DateTime<Utc>,
-    pub description: String,
-    pub last_modified: DateTime<Utc>,
-    pub location: String,
-    pub sequence: u32,
-    pub status: String,
-    pub summary: String,
-    pub transp: String,
+    pub dtstart: Option<DateTime<Utc>>,
+    pub dtend: Option<DateTime<Utc>>,
+    pub dtstamp: Option<DateTime<Utc>>,
+    pub uid: Option<String>,
+    pub created: Option<DateTime<Utc>>,
+    pub description: Option<String>,
+    pub last_modified: Option<DateTime<Utc>>,
+    pub location: Option<String>,
+    pub organizer: Option<String>,
+    pub sequence: Option<u32>,
+    pub status: Option<String>,
+    pub summary: Option<String>,
+    pub transp: Option<String>,
 }
 
 impl Event {
     ///Check if the events is all day.
-    pub fn is_all_day(&self) -> bool {
-        self.dtend.signed_duration_since(self.dtstart).num_hours() >= 24
+    pub fn is_all_day(&self) -> Option<bool> {
+        self.dtstart.as_ref().zip(self.dtend.as_ref()).map(|(start, end)| end.signed_duration_since(start).num_hours() >= 24)
     }
     pub fn empty() -> Event {
-        let date_tz = Utc::now().to_utc();
         Event {
-            dtstart: date_tz,
-            dtend: date_tz,
-            dtstamp: date_tz,
-            uid: "NULL".to_string(),
-            created: date_tz,
-            description: "NULL".to_string(),
-            last_modified: date_tz,
-            location: "NULL".to_string(),
-            sequence: 0,
-            status: "NULL".to_string(),
-            summary: "NULL".to_string(),
-            transp: "NULL".to_string(),
+            dtstart: None,
+            dtend: None,
+            dtstamp: None,
+            uid: None,
+            created: None,
+            description: None,
+            last_modified: None,
+            location: None,
+            organizer: None,
+            sequence: None,
+            status: None,
+            summary: None,
+            transp: None,
         }
     }
 }
@@ -117,7 +118,7 @@ pub struct Calendar {
 macro_rules! assign_if_ok {
     ($lvalue:expr, $rvalue:expr) => {
         if let Ok(rvalue_ok) = $rvalue {
-            $lvalue = rvalue_ok;
+            $lvalue = Some(rvalue_ok);
         }
     };
 }
@@ -181,30 +182,32 @@ impl Calendar {
                     x_wr_timezone = value_cal;
                 }
                 "UID" => {
-                    even_temp.uid = value_cal;
+                    even_temp.uid = Some(value_cal);
                 }
                 "DESCRIPTION" => {
-                    even_temp.description = value_cal;
+                    even_temp.description = Some(value_cal);
                 }
                 "LOCATION" => {
-                    even_temp.location = value_cal;
+                    even_temp.location = Some(value_cal);
                 }
                 "SEQUENCE" => {
-                    even_temp.sequence = value_cal.parse::<u32>().unwrap();
+                    even_temp.sequence = Some(value_cal.parse::<u32>().unwrap());
                 }
                 "STATUS" => {
-                    even_temp.status = value_cal;
+                    even_temp.status = Some(value_cal);
                 }
                 "SUMMARY" => {
-                    even_temp.summary = value_cal;
+                    even_temp.summary = Some(value_cal);
                 }
                 "TRANSP" => {
-                    even_temp.transp = value_cal;
+                    even_temp.transp = Some(value_cal);
                 }
+                "ORGANIZER" => {
 
+                }
                 "DTSTART" => match convert_datetime(&value_cal, "%Y%m%dT%H%M%SZ") {
                     Ok(val) => {
-                        even_temp.dtstart = val;
+                        even_temp.dtstart = Some(val);
                     }
                     Err(_) => (),
                 },
@@ -212,7 +215,7 @@ impl Calendar {
                     let aux_date = value_cal + "T000000Z";
                     match convert_datetime(&aux_date, "%Y%m%dT%H%M%SZ") {
                         Ok(val) => {
-                            even_temp.dtstart = val;
+                            even_temp.dtstart = Some(val);
                         }
                         Err(_) => (),
                     }
@@ -247,7 +250,7 @@ impl Calendar {
                     struct_even.push(even_temp.clone());
                 }
                 other => {
-                    log::debug!("unhandled key: {}", other);
+                    println!("unhandled key: {}", other);
                 }
             }
         }
@@ -357,31 +360,31 @@ impl Calendar {
             write!(
                 writer,
                 "DTSTART:{}\r\n",
-                &i.dtstart.format("%Y%m%dT%H%M%SZ")
+                &i.dtstart.as_ref().unwrap().format("%Y%m%dT%H%M%SZ")
             )?;
-            write!(writer, "DTEND:{}\r\n", &i.dtend.format("%Y%m%dT%H%M%SZ"))?;
+            write!(writer, "DTEND:{}\r\n", &i.dtend.as_ref().unwrap().format("%Y%m%dT%H%M%SZ"))?;
             write!(
                 writer,
                 "DTSTAMP:{}\r\n",
-                &i.dtstamp.format("%Y%m%dT%H%M%SZ")
+                &i.dtstamp.as_ref().unwrap().format("%Y%m%dT%H%M%SZ")
             )?;
-            write!(writer, "UID:{}\r\n", &i.uid)?;
+            write!(writer, "UID:{}\r\n", &i.uid.as_ref().unwrap())?;
             write!(
                 writer,
                 "CREATED:{}\r\n",
-                &i.created.format("%Y%m%dT%H%M%SZ")
+                &i.created.as_ref().unwrap().format("%Y%m%dT%H%M%SZ")
             )?;
-            write!(writer, "DESCRIPTION:{}\r\n", &i.description)?;
+            write!(writer, "DESCRIPTION:{}\r\n", &i.description.as_ref().unwrap())?;
             write!(
                 writer,
                 "LAST-MODIFIED:{}\r\n",
-                &i.last_modified.format("%Y%m%dT%H%M%SZ")
+                &i.last_modified.as_ref().unwrap().format("%Y%m%dT%H%M%SZ")
             )?;
-            write!(writer, "LOCATION:{}\r\n", &i.location)?;
-            write!(writer, "SEQUENCE:{}\r\n", &i.sequence)?;
-            write!(writer, "STATUS:{}\r\n", &i.status)?;
-            write!(writer, "SUMMARY:{}\r\n", &i.summary)?;
-            write!(writer, "TRANSP:{}\r\n", &i.transp)?;
+            write!(writer, "LOCATION:{}\r\n", &i.location.as_ref().unwrap())?;
+            write!(writer, "SEQUENCE:{}\r\n", &i.sequence.as_ref().unwrap())?;
+            write!(writer, "STATUS:{}\r\n", &i.status.as_ref().unwrap())?;
+            write!(writer, "SUMMARY:{}\r\n", &i.summary.as_ref().unwrap())?;
+            write!(writer, "TRANSP:{}\r\n", &i.transp.as_ref().unwrap())?;
             write!(writer, "END:VEVENT\r\n")?;
         }
         write!(writer, "END:VCALENDAR")?;
@@ -422,40 +425,40 @@ impl Calendar {
         for i in &self.events {
             data.push_str("BEGIN:VEVENT\r\n");
             data.push_str("DTSTART:");
-            data.push_str(&i.dtstart.format("%Y%m%dT%H%M%SZ").to_string());
+            data.push_str(&i.dtstart.as_ref().unwrap().format("%Y%m%dT%H%M%SZ").to_string());
             data.push_str("\r\n");
             data.push_str("DTEND:");
-            data.push_str(&i.dtend.format("%Y%m%dT%H%M%SZ").to_string());
+            data.push_str(&i.dtend.as_ref().unwrap().format("%Y%m%dT%H%M%SZ").to_string());
             data.push_str("\r\n");
             data.push_str("DTSTAMP:");
-            data.push_str(&i.dtstamp.format("%Y%m%dT%H%M%SZ").to_string());
+            data.push_str(&i.dtstamp.as_ref().unwrap().format("%Y%m%dT%H%M%SZ").to_string());
             data.push_str("\r\n");
             data.push_str("UID:");
-            data.push_str(&i.uid);
+            data.push_str(&i.uid.as_ref().unwrap());
             data.push_str("\r\n");
             data.push_str("CREATED:");
-            data.push_str(&i.created.format("%Y%m%dT%H%M%SZ").to_string());
+            data.push_str(&i.created.as_ref().unwrap().format("%Y%m%dT%H%M%SZ").to_string());
             data.push_str("\r\n");
             data.push_str("DESCRIPTION:");
-            data.push_str(&i.description);
+            data.push_str(&i.description.as_ref().unwrap());
             data.push_str("\r\n");
             data.push_str("LAST-MODIFIED:");
-            data.push_str(&i.last_modified.format("%Y%m%dT%H%M%SZ").to_string());
+            data.push_str(&i.last_modified.as_ref().unwrap().format("%Y%m%dT%H%M%SZ").to_string());
             data.push_str("\r\n");
             data.push_str("LOCATION:");
-            data.push_str(&i.location);
+            data.push_str(&i.location.as_ref().unwrap());
             data.push_str("\r\n");
             data.push_str("SEQUENCE:");
-            data.push_str(&i.sequence.to_string());
+            data.push_str(&i.sequence.as_ref().unwrap().to_string());
             data.push_str("\r\n");
             data.push_str("STATUS:");
-            data.push_str(&i.status);
+            data.push_str(&i.status.as_ref().unwrap());
             data.push_str("\r\n");
             data.push_str("SUMMARY:");
-            data.push_str(&i.summary);
+            data.push_str(&i.summary.as_ref().unwrap());
             data.push_str("\r\n");
             data.push_str("TRANSP:");
-            data.push_str(&i.transp);
+            data.push_str(&i.transp.as_ref().unwrap());
             data.push_str("\r\n");
             data.push_str("END:VEVENT\r\n");
         }
