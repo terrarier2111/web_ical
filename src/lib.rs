@@ -82,7 +82,10 @@ pub struct Event {
 impl Event {
     ///Check if the events is all day.
     pub fn is_all_day(&self) -> Option<bool> {
-        self.dtstart.as_ref().zip(self.dtend.as_ref()).map(|(start, end)| end.signed_duration_since(start).num_hours() >= 24)
+        self.dtstart
+            .as_ref()
+            .zip(self.dtend.as_ref())
+            .map(|(start, end)| end.signed_duration_since(start).num_hours() >= 24)
     }
     pub fn empty() -> Event {
         Event {
@@ -126,10 +129,12 @@ macro_rules! assign_if_ok {
 impl Calendar {
     ///Request HTTP or HTTPS to iCalendar url.
     pub fn new(url: &str) -> anyhow::Result<Calendar> {
-        let data = reqwest::get(url)
-            .context("Could not make request")?
-            .text()
-            .context("Could not read response")?;
+        let data = pollster::block_on(
+            pollster::block_on(reqwest::get(url))
+                .context("Could not make request")?
+                .text(),
+        )
+        .context("Could not read response")?;
         Self::new_from_data(&data)
     }
 
@@ -202,9 +207,7 @@ impl Calendar {
                 "TRANSP" => {
                     even_temp.transp = Some(value_cal);
                 }
-                "ORGANIZER" => {
-
-                }
+                "ORGANIZER" => {}
                 "DTSTART" => match convert_datetime(&value_cal, "%Y%m%dT%H%M%SZ") {
                     Ok(val) => {
                         even_temp.dtstart = Some(val);
@@ -362,7 +365,11 @@ impl Calendar {
                 "DTSTART:{}\r\n",
                 &i.dtstart.as_ref().unwrap().format("%Y%m%dT%H%M%SZ")
             )?;
-            write!(writer, "DTEND:{}\r\n", &i.dtend.as_ref().unwrap().format("%Y%m%dT%H%M%SZ"))?;
+            write!(
+                writer,
+                "DTEND:{}\r\n",
+                &i.dtend.as_ref().unwrap().format("%Y%m%dT%H%M%SZ")
+            )?;
             write!(
                 writer,
                 "DTSTAMP:{}\r\n",
@@ -374,7 +381,11 @@ impl Calendar {
                 "CREATED:{}\r\n",
                 &i.created.as_ref().unwrap().format("%Y%m%dT%H%M%SZ")
             )?;
-            write!(writer, "DESCRIPTION:{}\r\n", &i.description.as_ref().unwrap())?;
+            write!(
+                writer,
+                "DESCRIPTION:{}\r\n",
+                &i.description.as_ref().unwrap()
+            )?;
             write!(
                 writer,
                 "LAST-MODIFIED:{}\r\n",
@@ -425,25 +436,55 @@ impl Calendar {
         for i in &self.events {
             data.push_str("BEGIN:VEVENT\r\n");
             data.push_str("DTSTART:");
-            data.push_str(&i.dtstart.as_ref().unwrap().format("%Y%m%dT%H%M%SZ").to_string());
+            data.push_str(
+                &i.dtstart
+                    .as_ref()
+                    .unwrap()
+                    .format("%Y%m%dT%H%M%SZ")
+                    .to_string(),
+            );
             data.push_str("\r\n");
             data.push_str("DTEND:");
-            data.push_str(&i.dtend.as_ref().unwrap().format("%Y%m%dT%H%M%SZ").to_string());
+            data.push_str(
+                &i.dtend
+                    .as_ref()
+                    .unwrap()
+                    .format("%Y%m%dT%H%M%SZ")
+                    .to_string(),
+            );
             data.push_str("\r\n");
             data.push_str("DTSTAMP:");
-            data.push_str(&i.dtstamp.as_ref().unwrap().format("%Y%m%dT%H%M%SZ").to_string());
+            data.push_str(
+                &i.dtstamp
+                    .as_ref()
+                    .unwrap()
+                    .format("%Y%m%dT%H%M%SZ")
+                    .to_string(),
+            );
             data.push_str("\r\n");
             data.push_str("UID:");
             data.push_str(&i.uid.as_ref().unwrap());
             data.push_str("\r\n");
             data.push_str("CREATED:");
-            data.push_str(&i.created.as_ref().unwrap().format("%Y%m%dT%H%M%SZ").to_string());
+            data.push_str(
+                &i.created
+                    .as_ref()
+                    .unwrap()
+                    .format("%Y%m%dT%H%M%SZ")
+                    .to_string(),
+            );
             data.push_str("\r\n");
             data.push_str("DESCRIPTION:");
             data.push_str(&i.description.as_ref().unwrap());
             data.push_str("\r\n");
             data.push_str("LAST-MODIFIED:");
-            data.push_str(&i.last_modified.as_ref().unwrap().format("%Y%m%dT%H%M%SZ").to_string());
+            data.push_str(
+                &i.last_modified
+                    .as_ref()
+                    .unwrap()
+                    .format("%Y%m%dT%H%M%SZ")
+                    .to_string(),
+            );
             data.push_str("\r\n");
             data.push_str("LOCATION:");
             data.push_str(&i.location.as_ref().unwrap());
