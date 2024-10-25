@@ -214,7 +214,9 @@ impl Calendar {
                     Ok(val) => {
                         even_temp.dtstart = Some(val);
                     }
-                    Err(_) => (),
+                    Err(_) => {
+                        println!("bad dt start");
+                    },
                 },
                 "DTSTART;VALUE=DATE" => {
                     let aux_date = value_cal + "T000000Z";
@@ -222,7 +224,9 @@ impl Calendar {
                         Ok(val) => {
                             even_temp.dtstart = Some(val);
                         }
-                        Err(_) => (),
+                        Err(_) => {
+                            println!("bad dt start 2");
+                        },
                     }
                 }
                 "DTEND;VALUE=DATE" => {
