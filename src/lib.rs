@@ -210,7 +210,7 @@ impl Calendar {
                     even_temp.transp = Some(value_cal);
                 }
                 "ORGANIZER" => {}
-                "DTSTART" => match convert_datetime(&value_cal, "%Y%m%dT%H%M%SZ") {
+                "DTSTART" => match convert_datetime(&value_cal, "%Y%m%dT%H%M%S") {
                     Ok(val) => {
                         even_temp.dtstart = Some(val);
                     }
@@ -220,7 +220,7 @@ impl Calendar {
                 },
                 "DTSTART;VALUE=DATE" => {
                     let aux_date = value_cal + "T000000Z";
-                    match convert_datetime(&aux_date, "%Y%m%dT%H%M%SZ") {
+                    match convert_datetime(&aux_date, "%Y%m%dT%H%M%S") {
                         Ok(val) => {
                             even_temp.dtstart = Some(val);
                         }
@@ -234,25 +234,25 @@ impl Calendar {
                     let aux_date = value_cal + time_cal;
                     assign_if_ok!(
                         even_temp.dtend,
-                        convert_datetime(&aux_date, "%Y%m%dT%H%M%SZ")
+                        convert_datetime(&aux_date, "%Y%m%dT%H%M%S")
                     );
                 }
                 "DTSTAMP" => {
                     assign_if_ok!(
                         even_temp.dtstamp,
-                        convert_datetime(&value_cal, "%Y%m%dT%H%M%SZ")
+                        convert_datetime(&value_cal, "%Y%m%dT%H%M%S")
                     );
                 }
                 "CREATED" => {
                     assign_if_ok!(
                         even_temp.created,
-                        convert_datetime(&value_cal, "%Y%m%dT%H%M%SZ")
+                        convert_datetime(&value_cal, "%Y%m%dT%H%M%S")
                     );
                 }
                 "LAST-MODIFIED" => {
                     assign_if_ok!(
                         even_temp.last_modified,
-                        convert_datetime(&value_cal, "%Y%m%dT%H%M%SZ")
+                        convert_datetime(&value_cal, "%Y%m%dT%H%M%S")
                     );
                 }
                 "END" if value_cal == "VEVENT" => {
