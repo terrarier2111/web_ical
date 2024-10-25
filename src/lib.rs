@@ -63,7 +63,7 @@ fn convert_datetime(value: &str, format: &str) -> anyhow::Result<DateTime<Utc>> 
 ///store all events from iCalendar.
 #[derive(Clone)]
 // You should have called it Event, as it is only one event
-pub struct Events {
+pub struct Event {
     pub dtstart: DateTime<Utc>,
     pub dtend: DateTime<Utc>,
     pub dtstamp: DateTime<Utc>,
@@ -78,16 +78,14 @@ pub struct Events {
     pub transp: String,
 }
 
-impl Events {
+impl Event {
     ///Check if the events is all day.
     pub fn is_all_day(&self) -> bool {
         self.dtend.signed_duration_since(self.dtstart).num_hours() >= 24
     }
-    pub fn empty() -> Events {
-        let no_timezone =
-            NaiveDateTime::parse_from_str("20190630T130000Z", "%Y%m%dT%H%M%SZ").unwrap();
-        let date_tz: DateTime<Utc> = DateTime::from_utc(no_timezone, Utc);
-        Events {
+    pub fn empty() -> Event {
+        let date_tz = Utc::now().to_utc();
+        Event {
             dtstart: date_tz,
             dtend: date_tz,
             dtstamp: date_tz,
@@ -113,7 +111,7 @@ pub struct Calendar {
     pub method: String,
     pub x_wr_calname: String,
     pub x_wr_timezone: String,
-    pub events: Vec<Events>,
+    pub events: Vec<Event>,
 }
 
 macro_rules! assign_if_ok {
@@ -137,9 +135,9 @@ impl Calendar {
     ///Create a `Calendar` from text in memory.
     pub fn new_from_data(data: &str) -> anyhow::Result<Calendar> {
         let text_data = data.lines().collect::<Vec<_>>();
-        let mut struct_even: Vec<Events> = Vec::new();
+        let mut struct_even: Vec<Event> = Vec::new();
 
-        let mut even_temp = Events::empty();
+        let mut even_temp = Event::empty();
         let mut prodid = String::new();
         let mut version = String::new();
         let mut calscale = String::new();
@@ -203,7 +201,7 @@ impl Calendar {
                 "TRANSP" => {
                     even_temp.transp = value_cal;
                 }
-              
+
                 "DTSTART" => match convert_datetime(&value_cal, "%Y%m%dT%H%M%SZ") {
                     Ok(val) => {
                         even_temp.dtstart = val;
@@ -218,7 +216,6 @@ impl Calendar {
                         }
                         Err(_) => (),
                     }
-
                 }
                 "DTEND;VALUE=DATE" => {
                     let time_cal = "T002611Z";
@@ -336,7 +333,7 @@ impl Calendar {
     /// println!("{}", ical.events[0].summary);
     ///
     /// ```
-    pub fn add_event(&mut self, event: Events) {
+    pub fn add_event(&mut self, event: Event) {
         self.events.push(event);
     }
 

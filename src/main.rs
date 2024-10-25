@@ -4,7 +4,7 @@ extern crate web_ical;
 use chrono::Utc;
 use chrono::{DateTime, Duration};
 use web_ical::Calendar;
-use web_ical::Events;
+use web_ical::Event;
 
 fn main() {
     let icals = Calendar::new("http://ical.mac.com/ical/US32Holidays.ics").unwrap();
@@ -22,7 +22,7 @@ fn main() {
         start_cal = x;
     }
 
-    let own_event = Events {
+    let own_event = Event {
         dtstart: start_cal,
         dtend: start_cal,
         dtstamp: date_tz,

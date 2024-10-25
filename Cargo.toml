@@ -14,7 +14,7 @@ repository = "https://github.com/otoxteam/web_ical"
 
 
 [dependencies]
-reqwest = "0.9.18"
-chrono = "0.4"
-anyhow = "1.0"
-log = "0.4"
+reqwest = "0"
+chrono = "0"
+anyhow = "1"
+log = "0"
