@@ -208,7 +208,14 @@ fn parse_cal(raw: &str) -> anyhow::Result<Calendar> {
             )));
         }
         // remove the new line character
-        buf.pop();
+        if buf.ends_with("\r\n") {
+            buf.pop();
+            buf.pop();
+        } else if buf.ends_with('\n') {
+            buf.pop();
+        } else {
+            unreachable!();
+        }
         if &buf == "END:VCALENDAR" {
             // FIXME: error if cursor has more data to read
             return Ok(Calendar {
@@ -275,7 +282,14 @@ fn parse_event(raw: &mut Cursor<&str>) -> anyhow::Result<Event> {
             )));
         }
         // remove the new line character
-        buf.pop();
+        if buf.ends_with("\r\n") {
+            buf.pop();
+            buf.pop();
+        } else if buf.ends_with('\n') {
+            buf.pop();
+        } else {
+            unreachable!();
+        }
         if &buf == "END:VEVENT" {
             return Ok(ev);
         }
