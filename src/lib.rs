@@ -37,8 +37,8 @@ use anyhow::Context;
 use chrono::Utc;
 use chrono::{DateTime, NaiveDateTime};
 use std::fs::File;
-use std::io;
 use std::io::prelude::*;
+use std::io::{self, Cursor, ErrorKind};
 use std::path::Path;
 
 ///Convert datetime string to [`DateTime`](https://docs.rs/chrono/0.4.7/chrono/struct.DateTime.html)
@@ -64,10 +64,10 @@ fn convert_datetime(value: &str, format: &str) -> anyhow::Result<DateTime<Utc>> 
 #[derive(Clone)]
 // You should have called it Event, as it is only one event
 pub struct Event {
-    pub dtstart: Option<DateTime<Utc>>,
-    pub dtend: Option<DateTime<Utc>>,
     pub dtstamp: Option<DateTime<Utc>>,
     pub uid: Option<String>,
+    pub dtstart: Option<DateTime<Utc>>,
+    pub dtend: Option<DateTime<Utc>>,
     pub created: Option<DateTime<Utc>>,
     pub description: Option<String>,
     pub last_modified: Option<DateTime<Utc>>,
@@ -78,6 +78,37 @@ pub struct Event {
     pub summary: Option<String>,
     pub transp: Option<String>,
     pub repeat: Option<Repeat>,
+    pub class: Option<String>,
+    pub geo: Option<String>,
+    // pub last_mod: Option<String>,
+    pub priority: Option<String>,
+    pub recur_id: Option<String>,
+    pub url: Option<String>,
+    // missing: duration support,
+    /*
+    attach / attendee / categories / comment /
+                  contact / exdate / rstatus / related /
+                  resources / rdate / x-prop / iana-prop
+     */
+}
+
+impl Event {
+    #[inline]
+    fn check_consistency(&self, cal_has_method: bool) -> bool {
+        // if no method is specified on the calendar object, all of it's events have to specify a dtstart
+        self.dtstamp.is_some() && self.uid.is_some() && (cal_has_method || self.dtstart.is_some())
+    }
+
+    fn set_dt_start(&mut self, val: &str) -> anyhow::Result<()> {
+        if self.dtstart.is_some() {
+            panic!("Dtstart may not be specified more than once");
+        }
+        self.dtstart = Some(convert_datetime(
+            &format!("{val}T000000Z"),
+            "%Y%m%dT%H%M%S",
+        )?);
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -110,19 +141,25 @@ impl Event {
             summary: None,
             transp: None,
             repeat: None,
+            class: None,
+            geo: None,
+            priority: None,
+            recur_id: None,
+            url: None,
         }
     }
 }
 
-///store the iCalendar and add events from struct `Events`.
+/// store the iCalendar and add events from struct `Events`.
 #[derive(Clone)]
 pub struct Calendar {
+    pub name: Option<String>,
     pub prodid: String,
     pub version: String,
-    pub calscale: String,
-    pub method: String,
-    pub x_wr_calname: String,
-    pub x_wr_timezone: String,
+    pub calscale: Option<String>,
+    pub method: Option<String>,
+    pub x_wr_calname: Option<String>,
+    pub x_wr_timezone: Option<String>,
     pub events: Vec<Event>,
 }
 
@@ -134,8 +171,223 @@ macro_rules! assign_if_ok {
     };
 }
 
+struct CalendarBuilder {
+    prodid: Option<String>,
+    version: Option<String>,
+    calscale: Option<String>,
+    method: Option<String>,
+    x_wr_timezone: Option<String>,
+    x_wr_calname: Option<String>,
+    name: Option<String>,
+    events: Vec<Event>,
+}
+
+fn parse_cal(raw: &str) -> anyhow::Result<Calendar> {
+    let mut raw = Cursor::new(raw);
+    let mut buf = String::new();
+
+    raw.read_line(&mut buf)?;
+    // FIXME: handle this gracefully
+    assert_eq!(&buf, "BEGIN:VCALENDAR");
+
+    // FIXME: put all this into a builder struct!
+    let mut prodid = None;
+    let mut version = None;
+    let mut calscale = None;
+    let mut method = None;
+    let mut name = None;
+    let mut x_wr_calname = None;
+    let mut x_wr_timezone = None;
+
+    let mut events = vec![];
+    loop {
+        buf.clear();
+        if raw.read_line(&mut buf)? == 0 {
+            return Err(anyhow::Error::new(io::Error::from(
+                ErrorKind::UnexpectedEof,
+            )));
+        }
+        // remove the new line character
+        buf.pop();
+        if &buf == "END:VCALENDAR" {
+            // FIXME: error if cursor has more data to read
+            return Ok(Calendar {
+                prodid: prodid.expect("a calendar needs a prodid"),
+                version: version.expect("a calendar needs a version"),
+                calscale,
+                method,
+                x_wr_calname,
+                x_wr_timezone,
+                events,
+                name,
+            });
+        }
+        let (key, value) = if let Some(kv) = buf.split_once(':') {
+            kv
+        } else {
+            println!("Found bad line: {}", buf);
+            continue;
+        };
+        match key {
+            "NAME" => {
+                name = Some(value.to_string());
+            }
+            "PRODID" => {
+                assert!(prodid.is_none());
+                prodid = Some(value.to_string());
+            }
+            "VERSION" => {
+                assert!(version.is_none());
+                version = Some(value.to_string());
+            }
+            "CALSCALE" => {
+                calscale = Some(value.to_string());
+            }
+            "METHOD" => {
+                method = Some(value.to_string());
+            }
+            "X-WR-CALNAME" => {
+                x_wr_calname = Some(value.to_string());
+            }
+            "X-WR-TIMEZONE" => {
+                x_wr_timezone = Some(value.to_string());
+            }
+            "BEGIN" => {
+                if value == "VEVENT" {
+                    events.push(parse_event(&mut raw)?);
+                } else {
+                    // FIXME: todo support this!
+                }
+            }
+            _ => println!("unknown calendar key value pair \"{key}\": \"{value}\""),
+        }
+    }
+}
+
+fn parse_event(raw: &mut Cursor<&str>) -> anyhow::Result<Event> {
+    let mut buf = String::new();
+    let mut ev = Event::empty();
+    loop {
+        buf.clear();
+        if raw.read_line(&mut buf)? == 0 {
+            return Err(anyhow::Error::new(io::Error::from(
+                ErrorKind::UnexpectedEof,
+            )));
+        }
+        // remove the new line character
+        buf.pop();
+        if &buf == "END:VEVENT" {
+            return Ok(ev);
+        }
+        let (key, value) = if let Some(kv) = buf.split_once(':') {
+            kv
+        } else {
+            println!("Found bad line: {}", buf);
+            continue;
+        };
+        // FIXME: properly handle multi part keys
+        let key = key.split(';').next().unwrap_or(key);
+        match key {
+            "CLASS" => {
+                ev.class = Some(value.to_string());
+            }
+            "GEO" => {
+                ev.geo = Some(value.to_string());
+            }
+            "PRIORITY" => {
+                ev.priority = Some(value.to_string());
+            }
+            "RECUR-ID" => {
+                ev.recur_id = Some(value.to_string());
+            }
+            "URL" => {
+                ev.url = Some(value.to_string());
+            }
+            "UID" => {
+                ev.uid = Some(value.to_string());
+            }
+            "DESCRIPTION" => {
+                ev.description = Some(value.to_string());
+            }
+            "LOCATION" => {
+                ev.location = Some(value.to_string());
+            }
+            "SEQUENCE" => {
+                ev.sequence = Some(value.parse::<u32>().unwrap());
+            }
+            "STATUS" => {
+                ev.status = Some(value.to_string());
+            }
+            "SUMMARY" => {
+                ev.summary = Some(value.to_string());
+            }
+            "TRANSP" => {
+                ev.transp = Some(value.to_string());
+            }
+            "ORGANIZER" => {
+                ev.organizer = Some(value.to_string());
+            }
+            "RRULE" => {
+                let mut vals = value.split(';');
+                // FIXME: can we trust on this order always being this way?
+                let freq = {
+                    let freq = vals.next().unwrap();
+                    if freq.starts_with("FREQ=") {
+                        &freq["FREQ=".len()..]
+                    } else {
+                        println!("Found weird rrule: {}", value);
+                        continue;
+                    }
+                };
+                let until = vals
+                    .next()
+                    .map(|until| {
+                        if until.starts_with("UNTIL=") {
+                            match convert_datetime(&freq["UNTIL=".len()..], "%Y%m%dT%H%M%S") {
+                                Ok(val) => Some(val),
+                                Err(_) => None,
+                            }
+                        } else {
+                            println!("Found weird rrule: {}", value);
+                            None
+                        }
+                    })
+                    .flatten();
+                ev.repeat = Some(Repeat {
+                    freq: freq.to_string(),
+                    until,
+                });
+            }
+            "DTSTART" => match convert_datetime(&value, "%Y%m%dT%H%M%S") {
+                Ok(val) => {
+                    ev.dtstart = Some(val);
+                }
+                Err(_) => (),
+            },
+            "DTEND" => match convert_datetime(&value, "%Y%m%dT%H%M%S") {
+                Ok(val) => {
+                    ev.dtend = Some(val);
+                }
+                Err(_) => (),
+            },
+            "DTSTAMP" => {
+                assign_if_ok!(ev.dtstamp, convert_datetime(&value, "%Y%m%dT%H%M%S"));
+            }
+            "CREATED" => {
+                assign_if_ok!(ev.created, convert_datetime(&value, "%Y%m%dT%H%M%S"));
+            }
+            "LAST-MODIFIED" => {
+                assign_if_ok!(ev.last_modified, convert_datetime(&value, "%Y%m%dT%H%M%S"));
+            }
+            other => {
+                println!("unhandled key, value: \"{}\": \"{}\"", other, value);
+            }
+        }
+    }
+}
+
 impl Calendar {
-    ///Request HTTP or HTTPS to iCalendar url.
+    /// Request HTTP or HTTPS to iCalendar url.
     pub async fn new(url: &str) -> anyhow::Result<Calendar> {
         let data = reqwest::get(url)
             .await
@@ -146,202 +398,11 @@ impl Calendar {
         Self::new_from_data(&data)
     }
 
-    ///Create a `Calendar` from text in memory.
+    /// Create a `Calendar` from text in memory.
     pub fn new_from_data(data: &str) -> anyhow::Result<Calendar> {
-        println!("raw: {data}");
-        let text_data = data.lines().collect::<Vec<_>>();
-        let mut struct_even: Vec<Event> = Vec::new();
-
-        let mut even_temp = Event::empty();
-        let mut prodid = String::new();
-        let mut version = String::new();
-        let mut calscale = String::new();
-        let mut method = String::new();
-        let mut x_wr_calname = String::new();
-        let mut x_wr_timezone = String::new();
-
-        for i in text_data {
-            let kv = i.splitn(2, ':').collect::<Vec<_>>();
-
-            if kv.len() != 2 {
-                // FIXME: it would be nice if multiline values were supported,
-                // which would require a different parsing strategy than
-                // assuming KEY:VALUE\n as we're currently doing.
-                log::warn!("Could not find ':' in '{}, discarding line", i);
-                continue;
-            };
-
-            let key_cal = kv[0];
-            let key_cal = key_cal.split_once(';').map(|(val, _)| val).unwrap_or(key_cal);
-            let value_cal = kv[1].to_string();
-
-            log::trace!("processing {}:{}", &key_cal, &value_cal);
-
-            match key_cal {
-                "PRODID" => {
-                    prodid = value_cal;
-                }
-                "VERSION" => {
-                    version = value_cal;
-                }
-                "CALSCALE" => {
-                    calscale = value_cal;
-                }
-                "METHOD" => {
-                    method = value_cal;
-                }
-                "X-WR-CALNAME" => {
-                    x_wr_calname = value_cal;
-                }
-                "X-WR-TIMEZONE" => {
-                    x_wr_timezone = value_cal;
-                }
-                "UID" => {
-                    even_temp.uid = Some(value_cal);
-                }
-                "DESCRIPTION" => {
-                    even_temp.description = Some(value_cal);
-                }
-                "LOCATION" => {
-                    even_temp.location = Some(value_cal);
-                }
-                "SEQUENCE" => {
-                    even_temp.sequence = Some(value_cal.parse::<u32>().unwrap());
-                }
-                "STATUS" => {
-                    even_temp.status = Some(value_cal);
-                }
-                "SUMMARY" => {
-                    even_temp.summary = Some(value_cal);
-                }
-                "TRANSP" => {
-                    even_temp.transp = Some(value_cal);
-                }
-                "ORGANIZER" => {
-                    even_temp.organizer = Some(value_cal);
-                }
-                "RRULE" => {
-                    let mut vals = value_cal.split(';');
-                    let freq = {
-                        let freq = vals.next().unwrap();
-                        if freq.starts_with("FREQ=") {
-                            &freq["FREQ=".len()..]
-                        } else {
-                            println!("Found weird rrule: {}", value_cal);
-                            continue;
-                        }
-                    };
-                    let until = vals.next().map(|until| {
-                        if until.starts_with("UNTIL=") {
-                            match convert_datetime(&freq["UNTIL=".len()..], "%Y%m%dT%H%M%S") {
-                                Ok(val) => {
-                                    Some(val)
-                                }
-                                Err(_) => None,
-                            }
-                        } else {
-                            println!("Found weird rrule: {}", value_cal);
-                            None
-                        }
-                    }).flatten();
-                    even_temp.repeat = Some(Repeat { freq: freq.to_string(), until });
-                }
-                "DTSTART" => match convert_datetime(&value_cal, "%Y%m%dT%H%M%S") {
-                    Ok(val) => {
-                        even_temp.dtstart = Some(val);
-                    }
-                    Err(_) => (),
-                },
-                "DTSTART;VALUE=DATE" => {
-                    let aux_date = value_cal + "T000000Z";
-                    match convert_datetime(&aux_date, "%Y%m%dT%H%M%S") {
-                        Ok(val) => {
-                            even_temp.dtstart = Some(val);
-                        }
-                        Err(_) => (),
-                    }
-                }
-                "DTEND" => match convert_datetime(&value_cal, "%Y%m%dT%H%M%S") {
-                    Ok(val) => {
-                        even_temp.dtend = Some(val);
-                    }
-                    Err(_) => (),
-                },
-                "DTEND;VALUE=DATE" => {
-                    let time_cal = "T002611Z";
-                    let aux_date = value_cal + time_cal;
-                    assign_if_ok!(
-                        even_temp.dtend,
-                        convert_datetime(&aux_date, "%Y%m%dT%H%M%S")
-                    );
-                }
-                "DTSTAMP" => {
-                    assign_if_ok!(
-                        even_temp.dtstamp,
-                        convert_datetime(&value_cal, "%Y%m%dT%H%M%S")
-                    );
-                }
-                "CREATED" => {
-                    assign_if_ok!(
-                        even_temp.created,
-                        convert_datetime(&value_cal, "%Y%m%dT%H%M%S")
-                    );
-                }
-                "LAST-MODIFIED" => {
-                    assign_if_ok!(
-                        even_temp.last_modified,
-                        convert_datetime(&value_cal, "%Y%m%dT%H%M%S")
-                    );
-                }
-                "END" if value_cal == "VEVENT" => {
-                    struct_even.push(even_temp.clone());
-                }
-                other => {
-                    println!("unhandled key: {}", other);
-                }
-            }
-        }
-
-        Ok(Calendar {
-            prodid,
-            version,
-            calscale,
-            method,
-            x_wr_calname,
-            x_wr_timezone,
-            events: struct_even,
-        })
+        parse_cal(data)
     }
-    ///Create your own iCalendar instance
-    /// # Create an iCalendar
-    /// ```
-    /// let mut ical =  Calendar::create(
-    ///                       "-//My Business Inc//My Calendar 70.9054//EN",
-    ///                       "2.0",
-    ///                       "GREGORIAN",
-    ///                       "PUBLISH",
-    ///                       "example@gmail.com",
-    ///                       "America/New_York");
-    /// ```
-    pub fn create(
-        prodid: &str,
-        version: &str,
-        calscale: &str,
-        method: &str,
-        x_wr_calname: &str,
-        x_wr_timezone: &str,
-    ) -> Calendar {
-        Calendar {
-            prodid: prodid.to_string(),
-            version: version.to_string(),
-            calscale: calscale.to_string(),
-            method: method.to_string(),
-            x_wr_calname: x_wr_calname.to_string(),
-            x_wr_timezone: x_wr_timezone.to_string(),
-            events: vec![],
-        }
-    }
-    ///Add events to the calendar.
+    /// Add events to the calendar.
     ///
     /// # Add events
     /// ```
@@ -397,11 +458,19 @@ impl Calendar {
     pub fn export_to<W: Write>(&self, writer: &mut W) -> io::Result<()> {
         write!(writer, "BEGIN:VCALENDAR\r\n")?;
         write!(writer, "PRODID:{}\r\n", &self.prodid)?;
-        write!(writer, "CALSCALE:{}\r\n", &self.calscale)?;
+        if let Some(scale) = self.calscale.as_ref() {
+            write!(writer, "CALSCALE:{}\r\n", scale)?;
+        }
         write!(writer, "VERSION:{}\r\n", &self.version)?;
-        write!(writer, "METHOD:{}\r\n", &self.method)?;
-        write!(writer, "X-WR-CALNAME:{}\r\n", &self.x_wr_calname)?;
-        write!(writer, "X-WR-TIMEZONE:{}\r\n", &self.x_wr_timezone)?;
+        if let Some(method) = self.method.as_ref() {
+            write!(writer, "METHOD:{}\r\n", method)?;
+        }
+        if let Some(val) = self.x_wr_calname.as_ref() {
+            write!(writer, "X-WR-CALNAME:{}\r\n", val)?;
+        }
+        if let Some(tz) = self.x_wr_timezone.as_ref() {
+            write!(writer, "X-WR-TIMEZONE:{}\r\n", tz)?;
+        }
         for i in &self.events {
             write!(writer, "BEGIN:VEVENT\r\n")?;
             write!(
@@ -461,21 +530,29 @@ impl Calendar {
         let mut f = File::create(&path)?;
         data.push_str("PRODID:");
         data.push_str(&self.prodid);
-        data.push_str("\r\n");
-        data.push_str("CALSCALE:");
-        data.push_str(&self.calscale);
+        if let Some(scale) = self.calscale.as_ref() {
+            data.push_str("\r\n");
+            data.push_str("CALSCALE:");
+            data.push_str(scale);
+        }
         data.push_str("\r\n");
         data.push_str("VERSION:");
         data.push_str(&self.version);
-        data.push_str("\r\n");
-        data.push_str("METHOD:");
-        data.push_str(&self.method);
-        data.push_str("\r\n");
-        data.push_str("X-WR-CALNAME:");
-        data.push_str(&self.x_wr_calname);
-        data.push_str("\r\n");
-        data.push_str("X-WR-TIMEZONE:");
-        data.push_str(&self.x_wr_timezone);
+        if let Some(method) = self.method.as_ref() {
+            data.push_str("\r\n");
+            data.push_str("METHOD:");
+            data.push_str(method);
+        }
+        if let Some(calname) = self.x_wr_calname.as_ref() {
+            data.push_str("\r\n");
+            data.push_str("X-WR-CALNAME:");
+            data.push_str(calname);
+        }
+        if let Some(tz) = self.x_wr_timezone.as_ref() {
+            data.push_str("\r\n");
+            data.push_str("X-WR-TIMEZONE:");
+            data.push_str(tz);
+        }
         data.push_str("\r\n");
         for i in &self.events {
             data.push_str("BEGIN:VEVENT\r\n");
