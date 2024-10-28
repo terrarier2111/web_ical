@@ -188,7 +188,7 @@ fn parse_cal(raw: &str) -> anyhow::Result<Calendar> {
 
     raw.read_line(&mut buf)?;
     // FIXME: handle this gracefully
-    assert_eq!(&buf, "BEGIN:VCALENDAR");
+    assert_eq!(&buf, "BEGIN:VCALENDAR\r\n");
 
     // FIXME: put all this into a builder struct!
     let mut prodid = None;
